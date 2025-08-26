@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Info App</title>
+</head>
+<body>
+    <h2>Add User</h2>
+    <form action="/add" method="post">
+        <label>ID:</label>
+        <input type="number" name="id" required><br><br>
+        
+        <label>Name:</label>
+        <input type="text" name="name" required><br><br>
+        
+        <button type="submit">Save</button>
+    </form>
+
+    <h2>Find User</h2>
+    <form action="/user" method="get">
+        <label>Enter ID:</label>
+        <input type="number" name="id" required><br><br>
+        <button type="submit">Search</button>
+    </form>
+</body>
+</html>

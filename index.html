@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User App</title>
+</head>
+<body>
+  <h1>Simple User App</h1>
+
+  <!-- Add User -->
+  <h2>Add User</h2>
+  <input type="number" id="userId" placeholder="Enter ID">
+  <input type="text" id="userName" placeholder="Enter Name">
+  <button onclick="addUser()">Add</button>
+  <p id="addResult"></p>
+
+  <!-- Get User -->
+  <h2>Get User</h2>
+  <input type="number" id="searchId" placeholder="Enter ID">
+  <button onclick="getUser()">Get</button>
+  <p id="getResult"></p>
+
+  <script>
+    async function addUser() {
+      const id = document.getElementById("userId").value;
+      const name = document.getElementById("userName").value;
+
+      const response = await fetch("http://localhost:5000/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: Number(id), name: name })
+      });
+
+      const data = await response.text();
+      document.getElementById("addResult").innerText = data;
+    }
+
+    async function getUser() {
+      const id = document.getElementById("searchId").value;
+
+      const response = await fetch(`http://localhost:5000/user/${id}`);
+      const data = await response.json();
+
+      document.getElementById("getResult").innerText = 
+        `ID: ${data.id}, Name: ${data.name}`;
+    }
+  </script>
+</body>
+</html>

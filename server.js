@@ -1,53 +1,38 @@
-// server.js
-const express = require('express');
-const path = require('path');
-const db = require('./database');
+const express = require("express");
+const db = require("./db"); // our db.js
+const bodyParser = require("body-parser");
 
 const app = express();
+app.use(bodyParser.json());
 
-// parse JSON and form data
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Serve static files (add.html, search.html) from project root
-app.use(express.static(path.join(__dirname)));
-
-// POST /add  -> add user
-app.post('/add', (req, res) => {
+// API to insert user
+app.post("/add", (req, res) => {
   const { id, name } = req.body;
-  if (!id || !name) return res.status(400).json({ error: 'id and name required' });
 
-  db.run('INSERT INTO users(id, name) VALUES(?, ?)', [id, name], function (err) {
+  const query = "INSERT INTO users (id, name) VALUES (?, ?)";
+  db.query(query, [id, name], (err, result) => {
     if (err) {
-      // primary key (duplicate) check
-      if (err.message && err.message.includes('SQLITE_CONSTRAINT')) {
-        return res.status(400).json({ error: 'User already exists' });
-      }
-      console.error('DB insert error:', err);
-      return res.status(500).json({ error: 'Database error' });
+      console.error(err);
+      return res.status(500).send("Error inserting user");
     }
-    console.log(`Added user ${id} -> ${name}`);
-    res.json({ message: 'User saved!' });
+    res.send("User added successfully ✅");
   });
 });
 
-// GET /get/:id -> get user name
-app.get('/get/:id', (req, res) => {
-  const id = req.params.id;
-  db.get('SELECT name FROM users WHERE id = ?', [id], (err, row) => {
+// API to get user by id
+app.get("/user/:id", (req, res) => {
+  const { id } = req.params;
+
+  const query = "SELECT * FROM users WHERE id = ?";
+  db.query(query, [id], (err, result) => {
     if (err) {
-      console.error('DB select error:', err);
-      return res.status(500).json({ error: 'Database error' });
+      console.error(err);
+      return res.status(500).send("Error fetching user");
     }
-    if (row) return res.json({ name: row.name });
-    return res.status(404).json({ error: 'User not found' });
+    res.json(result);
   });
 });
 
-// optional: root -> redirect to add.html
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'add.html'));
+app.listen(5000, () => {
+  console.log("Server running on http://localhost:5000");
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
