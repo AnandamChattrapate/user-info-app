@@ -1,18 +1,18 @@
-from flask import Flask, request, jsonify, render_template
-import mysql.connector
 import os
+import mysql.connector
+from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
 
-# Connect to MySQL using environment variables
+# Connect to Railway MySQL using environment variables
 mydb = mysql.connector.connect(
-    host=os.environ.get("DB_HOST"),       # Railway MySQL host
-    user=os.environ.get("DB_USER"),       # Railway MySQL username
-    password=os.environ.get("DB_PASSWORD"),  # Railway MySQL password
-    database=os.environ.get("DB_NAME")    # Railway MySQL database name
+    host=os.environ.get("DB_HOST"),       # Railway host
+    user=os.environ.get("DB_USER"),       # Railway username
+    password=os.environ.get("DB_PASSWORD"),  # Railway password
+    database=os.environ.get("DB_NAME")    # Railway database name
 )
 
-cursor = mydb.cursor()
+cursor = mydb.cursor(dictionary=True)
 
 @app.route('/')
 def home():
@@ -22,17 +22,19 @@ def home():
 def add_user():
     user_id = request.form['id']
     name = request.form['name']
-    cursor.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (user_id, name))
+    sql = "INSERT INTO users (id, name) VALUES (%s, %s)"
+    cursor.execute(sql, (user_id, name))
     mydb.commit()
     return f"User {name} with ID {user_id} saved successfully!"
 
 @app.route('/user', methods=['GET'])
 def get_user():
     user_id = request.args.get('id')
-    cursor.execute("SELECT name FROM users WHERE id=%s", (user_id,))
-    result = cursor.fetchone()
-    if result:
-        return f"User found: {result[0]}"
+    sql = "SELECT * FROM users WHERE id=%s"
+    cursor.execute(sql, (user_id,))
+    user = cursor.fetchone()
+    if user:
+        return f"User found: {user['name']}"
     else:
         return "User not found!"
 
