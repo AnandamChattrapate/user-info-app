@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Add User</title>
+</head>
+<body>
+  <h2>Add User</h2>
+  <form id="addForm">
+    ID: <input type="text" id="userId" required><br><br>
+    Name: <input type="text" id="userName" required><br><br>
+    <button type="submit">Save</button>
+  </form>
+  <p id="result"></p>
+  <p><a href="/search.html">Go to Search</a></p>
+
+  <script>
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('userId').value.trim();
+      const name = document.getElementById('userName').value.trim();
+      if (!id || !name) { document.getElementById('result').innerText = 'Enter id and name'; return; }
+
+      try {
+        const res = await fetch('/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, name })
+        });
+        const data = await res.json();
+        document.getElementById('result').innerText = data.message || data.error;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('result').innerText = 'Network error';
+      }
+    });
+  </script>
+</body>
+</html>
