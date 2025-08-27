@@ -1,37 +1,41 @@
 import os
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 import psycopg
-from datetime import datetime
 
 app = Flask(__name__)
 
 def get_db_connection():
-    """Get database connection using individual environment variables"""
+    """Get database connection"""
     try:
-        # Get individual PostgreSQL connection variables
-        db_host = os.environ.get('PGHOST')
-        db_port = os.environ.get('PGPORT')
-        db_name = os.environ.get('PGDATABASE')
-        db_user = os.environ.get('PGUSER')
-        db_password = os.environ.get('PGPASSWORD')
+        # Try DATABASE_URL first (easiest for Render)
+        database_url = os.environ.get('DATABASE_URL')
         
-        # Check if all required variables are set
-        if not all([db_host, db_port, db_name, db_user, db_password]):
-            print("Missing some database environment variables")
-            return None
+        # If not set, try individual variables
+        if not database_url:
+            db_host = os.environ.get('PGHOST')
+            db_port = os.environ.get('PGPORT', '5432')
+            db_name = os.environ.get('PGDATABASE')
+            db_user = os.environ.get('PGUSER')
+            db_password = os.environ.get('PGPASSWORD')
+            
+            if all([db_host, db_name, db_user, db_password]):
+                database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+            else:
+                print("ERROR: No database connection configured!")
+                print("Set either DATABASE_URL or PGHOST/PGDATABASE/PGUSER/PGPASSWORD")
+                return None
         
-        # Construct connection string
-        connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-        
-        conn = psycopg.connect(connection_string)
+        print(f"Connecting to database...")
+        conn = psycopg.connect(database_url)
+        print("Database connection successful!")
         return conn
         
     except Exception as e:
-        print(f"Database connection error: {e}")
+        print(f"Database connection failed: {e}")
         return None
 
 def initialize_database():
-    """Initialize database tables if they don't exist"""
+    """Initialize database with simple schema"""
     conn = get_db_connection()
     if conn is None:
         return False
@@ -39,13 +43,14 @@ def initialize_database():
     try:
         with conn:
             with conn.cursor() as cursor:
+                # Simple table without created_at
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS users(
                         id INTEGER PRIMARY KEY,
-                        name VARCHAR(100) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        name VARCHAR(100) NOT NULL
                     )
                 """)
+                print("Users table ready!")
         return True
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -64,31 +69,25 @@ def home():
         try:
             with conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT id, name, created_at FROM users ORDER BY id")
+                    cursor.execute("SELECT id, name FROM users ORDER BY id")
                     users_data = cursor.fetchall()
-                    users = [
-                        {
-                            'id': user[0],
-                            'name': user[1],
-                            'created_at': user[2].strftime('%Y-%m-%d %H:%M:%S') if user[2] else 'Unknown'
-                        }
-                        for user in users_data
-                    ]
+                    users = [{'id': user[0], 'name': user[1]} for user in users_data]
+                    print(f"Found {len(users)} users")
         except Exception as e:
             print(f"Error fetching users: {e}")
         finally:
             conn.close()
+    else:
+        print("No database connection for home page")
     
     return render_template('index.html', users=users)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_user():
-    """Add a new user - shows form on GET, processes form on POST"""
+    """Add a new user"""
     if request.method == 'GET':
-        # Show the add user form
         return render_template('add_user.html')
     
-    # POST request - process form submission
     try:
         user_id = request.form.get('id')
         name = request.form.get('name')
@@ -101,7 +100,8 @@ def add_user():
         except ValueError:
             return render_template('add_user.html', error='ID must be a number')
         
-        if not name.strip():
+        name = name.strip()
+        if not name:
             return render_template('add_user.html', error='Name cannot be empty')
         
         conn = get_db_connection()
@@ -114,24 +114,21 @@ def add_user():
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS users(
                         id INTEGER PRIMARY KEY,
-                        name VARCHAR(100) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        name VARCHAR(100) NOT NULL
                     )
                 """)
                 
                 # Check if user exists
-                cursor.execute("SELECT id, name FROM users WHERE id = %s", (user_id,))
-                existing_user = cursor.fetchone()
+                cursor.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+                existing = cursor.fetchone()
                 
-                if existing_user:
+                if existing:
                     return render_template('add_user.html', 
-                                         error=f'User with ID {user_id} already exists: {existing_user[1]}')
+                                         error=f'User with ID {user_id} already exists: {existing[0]}')
                 
                 # Insert new user
-                cursor.execute(
-                    "INSERT INTO users (id, name) VALUES (%s, %s)", 
-                    (user_id, name.strip())
-                )
+                cursor.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (user_id, name))
+                print(f"Added user: ID={user_id}, Name={name}")
                 
         return redirect(url_for('home'))
         
@@ -159,59 +156,67 @@ def get_user():
     try:
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT id, name, created_at FROM users WHERE id = %s", (user_id,))
+                cursor.execute("SELECT id, name FROM users WHERE id = %s", (user_id,))
                 user = cursor.fetchone()
                 
                 if user:
-                    user_data = {
-                        'id': user[0],
-                        'name': user[1],
-                        'created_at': user[2].strftime('%Y-%m-%d %H:%M:%S') if user[2] else 'Unknown'
-                    }
+                    user_data = {'id': user[0], 'name': user[1]}
+                    print(f"Found user: {user_data}")
                     return render_template('index.html', found_user=user_data)
                 else:
+                    print(f"User with ID {user_id} not found")
                     return render_template('index.html', error=f'User with ID {user_id} not found')
                     
     except Exception as e:
         print(f"Error in get_user: {e}")
         return render_template('index.html', error='Internal server error')
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
-# Keep these API endpoints for programmatic access
-@app.route('/api/health')
-def health_check():
-    """Health check endpoint (API)"""
-    db_conn = get_db_connection()
-    db_status = "connected" if db_conn else "disconnected"
-    if db_conn:
-        db_conn.close()
+@app.route('/delete/<int:user_id>', methods=['POST'])
+def delete_user(user_id):
+    """Delete a user"""
+    conn = get_db_connection()
+    if conn is None:
+        return redirect(url_for('home'))
     
-    return jsonify({'status': 'healthy', 'database': db_status})
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+                print(f"Deleted user with ID: {user_id}")
+        return redirect(url_for('home'))
+    except Exception as e:
+        print(f"Error deleting user: {e}")
+        return redirect(url_for('home'))
+    finally:
+        if conn:
+            conn.close()
 
-@app.route('/api/debug')
-def debug_info():
-    """Debug connection information (API)"""
-    db_connected = get_db_connection() is not None
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    conn = get_db_connection()
+    status = "connected" if conn else "disconnected"
+    if conn:
+        conn.close()
+    
     return jsonify({
-        'database_connected': db_connected,
-        'environment_variables_set': {
-            'PGHOST': bool(os.environ.get('PGHOST')),
-            'PGPORT': bool(os.environ.get('PGPORT')),
-            'PGDATABASE': bool(os.environ.get('PGDATABASE')),
-            'PGUSER': bool(os.environ.get('PGUSER')),
-            'PGPASSWORD': bool(os.environ.get('PGPASSWORD'))
-        }
+        'status': 'healthy',
+        'database': status,
+        'service': 'user-info-app'
     })
 
 # Initialize database when app starts
 if __name__ == '__main__':
+    print("🚀 Starting User Info App...")
     print("Initializing database...")
     if initialize_database():
-        print("Database initialized successfully!")
+        print("✅ Database initialized successfully!")
     else:
-        print("Database initialization failed. Check your connection settings.")
+        print("❌ Database initialization failed")
     
     port = int(os.environ.get('PORT', 10000))
-    print(f"Starting server on port {port}")
+    print(f"🌐 Starting server on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
