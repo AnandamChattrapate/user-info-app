@@ -1,6 +1,7 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 import psycopg
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -16,22 +17,13 @@ def get_db_connection():
         
         # Check if all required variables are set
         if not all([db_host, db_port, db_name, db_user, db_password]):
-            missing = []
-            if not db_host: missing.append('PGHOST')
-            if not db_port: missing.append('PGPORT')
-            if not db_name: missing.append('PGDATABASE')
-            if not db_user: missing.append('PGUSER')
-            if not db_password: missing.append('PGPASSWORD')
-            
-            print(f"Missing database environment variables: {', '.join(missing)}")
+            print("Missing some database environment variables")
             return None
         
         # Construct connection string
         connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
         
-        print(f"Connecting to database: {db_host}:{db_port}/{db_name}")
         conn = psycopg.connect(connection_string)
-        print("Database connection successful")
         return conn
         
     except Exception as e:
@@ -54,7 +46,6 @@ def initialize_database():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                print("Database table initialized successfully")
         return True
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -65,77 +56,57 @@ def initialize_database():
 
 @app.route('/')
 def home():
-    """Home endpoint with service information"""
-    external_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://user-info-app-4lxh.onrender.com')
+    """Home page with user management interface"""
+    conn = get_db_connection()
+    users = []
     
-    return jsonify({
-        'message': 'User Info API is running! 🚀',
-        'external_url': external_url,
-        'database_connected': get_db_connection() is not None,
-        'endpoints': {
-            'add_user': 'POST /add - Add a new user',
-            'get_user': 'GET /user?id=<id> - Get user by ID',
-            'get_all_users': 'GET /users - Get all users',
-            'health': 'GET /health - Service health check',
-            'debug': 'GET /debug - Connection debug info'
-        }
-    })
-
-@app.route('/health')
-def health_check():
-    """Health check endpoint"""
-    db_conn = get_db_connection()
-    db_status = "connected" if db_conn else "disconnected"
-    if db_conn:
-        db_conn.close()
+    if conn:
+        try:
+            with conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT id, name, created_at FROM users ORDER BY id")
+                    users_data = cursor.fetchall()
+                    users = [
+                        {
+                            'id': user[0],
+                            'name': user[1],
+                            'created_at': user[2].strftime('%Y-%m-%d %H:%M:%S') if user[2] else 'Unknown'
+                        }
+                        for user in users_data
+                    ]
+        except Exception as e:
+            print(f"Error fetching users: {e}")
+        finally:
+            conn.close()
     
-    return jsonify({
-        'status': 'healthy',
-        'database': db_status,
-        'service': 'user-info-app'
-    })
+    return render_template('index.html', users=users)
 
-@app.route('/debug')
-def debug_info():
-    """Debug connection information"""
-    db_connected = get_db_connection() is not None
-    
-    return jsonify({
-        'database_connected': db_connected,
-        'environment_variables': {
-            'PGHOST_set': bool(os.environ.get('PGHOST')),
-            'PGPORT_set': bool(os.environ.get('PGPORT')),
-            'PGDATABASE_set': bool(os.environ.get('PGDATABASE')),
-            'PGUSER_set': bool(os.environ.get('PGUSER')),
-            'PGPASSWORD_set': bool(os.environ.get('PGPASSWORD')),
-            'RENDER_EXTERNAL_URL_set': bool(os.environ.get('RENDER_EXTERNAL_URL'))
-        }
-    })
-
-@app.route('/add', methods=['POST'])
+@app.route('/add', methods=['GET', 'POST'])
 def add_user():
-    """Add a new user"""
+    """Add a new user - shows form on GET, processes form on POST"""
+    if request.method == 'GET':
+        # Show the add user form
+        return render_template('add_user.html')
+    
+    # POST request - process form submission
     try:
-        if not request.is_json:
-            return jsonify({'error': 'Request must be JSON'}), 400
-            
-        data = request.get_json()
+        user_id = request.form.get('id')
+        name = request.form.get('name')
         
-        if not data or 'id' not in data or 'name' not in data:
-            return jsonify({'error': 'Missing id or name'}), 400
+        if not user_id or not name:
+            return render_template('add_user.html', error='Missing id or name')
         
-        user_id = data['id']
-        name = data['name']
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            return render_template('add_user.html', error='ID must be a number')
         
-        if not isinstance(user_id, int):
-            return jsonify({'error': 'id must be an integer'}), 400
-            
-        if not isinstance(name, str) or not name.strip():
-            return jsonify({'error': 'name must be a non-empty string'}), 400
+        if not name.strip():
+            return render_template('add_user.html', error='Name cannot be empty')
         
         conn = get_db_connection()
         if conn is None:
-            return jsonify({'error': 'Database connection failed'}), 500
+            return render_template('add_user.html', error='Database connection failed')
             
         with conn:
             with conn.cursor() as cursor:
@@ -153,10 +124,8 @@ def add_user():
                 existing_user = cursor.fetchone()
                 
                 if existing_user:
-                    return jsonify({
-                        'error': f'User with id {user_id} already exists',
-                        'existing_user': {'id': existing_user[0], 'name': existing_user[1]}
-                    }), 409
+                    return render_template('add_user.html', 
+                                         error=f'User with ID {user_id} already exists: {existing_user[1]}')
                 
                 # Insert new user
                 cursor.execute(
@@ -164,81 +133,76 @@ def add_user():
                     (user_id, name.strip())
                 )
                 
-        return jsonify({
-            'message': 'User added successfully', 
-            'user': {'id': user_id, 'name': name.strip()}
-        }), 201
+        return redirect(url_for('home'))
         
     except Exception as e:
         print(f"Error in add_user: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return render_template('add_user.html', error='Internal server error')
 
 @app.route('/user', methods=['GET'])
 def get_user():
-    """Get user by ID"""
+    """Find user by ID"""
+    user_id = request.args.get('id')
+    
+    if not user_id:
+        return render_template('index.html', error='Please provide a user ID')
+    
     try:
-        user_id = request.args.get('id')
-        if not user_id:
-            return jsonify({'error': 'Missing user id parameter'}), 400
-        
-        try:
-            user_id = int(user_id)
-        except ValueError:
-            return jsonify({'error': 'id must be an integer'}), 400
-        
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
+        user_id = int(user_id)
+    except ValueError:
+        return render_template('index.html', error='ID must be a number')
+    
+    conn = get_db_connection()
+    if conn is None:
+        return render_template('index.html', error='Database connection failed')
+    
+    try:
         with conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT id, name, created_at FROM users WHERE id = %s", (user_id,))
                 user = cursor.fetchone()
                 
                 if user:
-                    return jsonify({
-                        'user': {
-                            'id': user[0],
-                            'name': user[1],
-                            'created_at': user[2].isoformat() if user[2] else None
-                        }
-                    }), 200
+                    user_data = {
+                        'id': user[0],
+                        'name': user[1],
+                        'created_at': user[2].strftime('%Y-%m-%d %H:%M:%S') if user[2] else 'Unknown'
+                    }
+                    return render_template('index.html', found_user=user_data)
                 else:
-                    return jsonify({'error': 'User not found'}), 404
+                    return render_template('index.html', error=f'User with ID {user_id} not found')
                     
     except Exception as e:
         print(f"Error in get_user: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return render_template('index.html', error='Internal server error')
+    finally:
+        conn.close()
 
-@app.route('/users', methods=['GET'])
-def get_all_users():
-    """Get all users"""
-    try:
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT id, name, created_at FROM users ORDER BY id")
-                users = cursor.fetchall()
-                
-                users_list = [
-                    {
-                        'id': user[0],
-                        'name': user[1],
-                        'created_at': user[2].isoformat() if user[2] else None
-                    } for user in users
-                ]
-                
-                return jsonify({
-                    'count': len(users_list),
-                    'users': users_list
-                }), 200
-                
-    except Exception as e:
-        print(f"Error in get_all_users: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+# Keep these API endpoints for programmatic access
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint (API)"""
+    db_conn = get_db_connection()
+    db_status = "connected" if db_conn else "disconnected"
+    if db_conn:
+        db_conn.close()
+    
+    return jsonify({'status': 'healthy', 'database': db_status})
+
+@app.route('/api/debug')
+def debug_info():
+    """Debug connection information (API)"""
+    db_connected = get_db_connection() is not None
+    return jsonify({
+        'database_connected': db_connected,
+        'environment_variables_set': {
+            'PGHOST': bool(os.environ.get('PGHOST')),
+            'PGPORT': bool(os.environ.get('PGPORT')),
+            'PGDATABASE': bool(os.environ.get('PGDATABASE')),
+            'PGUSER': bool(os.environ.get('PGUSER')),
+            'PGPASSWORD': bool(os.environ.get('PGPASSWORD'))
+        }
+    })
 
 # Initialize database when app starts
 if __name__ == '__main__':
