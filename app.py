@@ -1,28 +1,20 @@
 import os
-import psycopg2
+import psycopg
 from flask import Flask, request, render_template
 
 app = Flask(__name__)
 
 # Connect to PostgreSQL using environment variables
-conn = psycopg2.connect(
+conn = psycopg.connect(
     host=os.environ.get("PGHOST"),
     port=os.environ.get("PGPORT"),
     user=os.environ.get("PGUSER"),
     password=os.environ.get("PGPASSWORD"),
-    dbname=os.environ.get("PGDATABASE")
+    dbname=os.environ.get("PGDATABASE"),
+    row_factory=psycopg.rows.dict_row  # returns results as dictionaries
 )
 
 cursor = conn.cursor()
-
-# Ensure table exists
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users(
-    id TEXT PRIMARY KEY,
-    name TEXT
-)
-""")
-conn.commit()
 
 @app.route('/')
 def home():
@@ -32,23 +24,25 @@ def home():
 def add_user():
     user_id = request.form['id']
     name = request.form['name']
-    sql = "INSERT INTO users (id, name) VALUES (%s, %s)"
-    try:
-        cursor.execute(sql, (user_id, name))
-        conn.commit()
-        return f"User {name} with ID {user_id} saved successfully!"
-    except psycopg2.IntegrityError:
-        conn.rollback()
-        return f"User with ID {user_id} already exists!"
+    # Create table if not exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users(
+            id TEXT PRIMARY KEY,
+            name TEXT
+        )
+    """)
+    # Insert user
+    cursor.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (user_id, name))
+    conn.commit()
+    return f"User {name} with ID {user_id} saved successfully!"
 
 @app.route('/user', methods=['GET'])
 def get_user():
     user_id = request.args.get('id')
-    sql = "SELECT * FROM users WHERE id=%s"
-    cursor.execute(sql, (user_id,))
+    cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
     user = cursor.fetchone()
     if user:
-        return f"User found: {user[1]}"  # index 1 is 'name'
+        return f"User found: {user['name']}"
     else:
         return "User not found!"
 
