@@ -10,10 +10,19 @@ conn = psycopg2.connect(
     port=os.environ.get("PGPORT"),
     user=os.environ.get("PGUSER"),
     password=os.environ.get("PGPASSWORD"),
-    database=os.environ.get("PGDATABASE")
+    dbname=os.environ.get("PGDATABASE")
 )
 
 cursor = conn.cursor()
+
+# Ensure table exists
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    id TEXT PRIMARY KEY,
+    name TEXT
+)
+""")
+conn.commit()
 
 @app.route('/')
 def home():
@@ -23,12 +32,14 @@ def home():
 def add_user():
     user_id = request.form['id']
     name = request.form['name']
-    # PostgreSQL uses SERIAL for auto-increment IDs (optional)
-    cursor.execute("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT)")
     sql = "INSERT INTO users (id, name) VALUES (%s, %s)"
-    cursor.execute(sql, (user_id, name))
-    conn.commit()
-    return f"User {name} with ID {user_id} saved successfully!"
+    try:
+        cursor.execute(sql, (user_id, name))
+        conn.commit()
+        return f"User {name} with ID {user_id} saved successfully!"
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        return f"User with ID {user_id} already exists!"
 
 @app.route('/user', methods=['GET'])
 def get_user():
@@ -42,4 +53,4 @@ def get_user():
         return "User not found!"
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
