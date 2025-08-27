@@ -1,18 +1,19 @@
 import os
-import mysql.connector
+import psycopg2
 from flask import Flask, request, render_template
 
 app = Flask(__name__)
 
-# Connect to Railway MySQL using environment variables
-mydb = mysql.connector.connect(
-    host=os.environ.get("MYSQLHOST"),       # Railway MySQL host
-    user=os.environ.get("MYSQLUSER"),       # Railway MySQL username
-    password=os.environ.get("MYSQLPASSWORD"),  # Railway MySQL password
-    database=os.environ.get("MYSQL_DATABASE")   # Railway MySQL database name
+# Connect to PostgreSQL using environment variables
+conn = psycopg2.connect(
+    host=os.environ.get("PGHOST"),
+    port=os.environ.get("PGPORT"),
+    user=os.environ.get("PGUSER"),
+    password=os.environ.get("PGPASSWORD"),
+    database=os.environ.get("PGDATABASE")
 )
 
-cursor = mydb.cursor(dictionary=True)
+cursor = conn.cursor()
 
 @app.route('/')
 def home():
@@ -22,9 +23,11 @@ def home():
 def add_user():
     user_id = request.form['id']
     name = request.form['name']
+    # PostgreSQL uses SERIAL for auto-increment IDs (optional)
+    cursor.execute("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT)")
     sql = "INSERT INTO users (id, name) VALUES (%s, %s)"
     cursor.execute(sql, (user_id, name))
-    mydb.commit()
+    conn.commit()
     return f"User {name} with ID {user_id} saved successfully!"
 
 @app.route('/user', methods=['GET'])
@@ -34,9 +37,9 @@ def get_user():
     cursor.execute(sql, (user_id,))
     user = cursor.fetchone()
     if user:
-        return f"User found: {user['name']}"
+        return f"User found: {user[1]}"  # index 1 is 'name'
     else:
         return "User not found!"
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
