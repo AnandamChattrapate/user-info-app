@@ -2,25 +2,52 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>User Info App</title>
+    <title>User App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f7f7f7;
+            margin: 50px;
+        }
+        h1 {
+            color: #333;
+        }
+        form {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px #ccc;
+        }
+        input[type="text"], input[type="submit"] {
+            padding: 8px;
+            margin: 5px 0;
+        }
+        input[type="submit"] {
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+        }
+    </style>
 </head>
 <body>
-    <h2>Add User</h2>
-    <form action="/add" method="post">
-        <label>ID:</label>
-        <input type="number" name="id" required><br><br>
-        
-        <label>Name:</label>
-        <input type="text" name="name" required><br><br>
-        
-        <button type="submit">Save</button>
+
+    <h1>Add a User</h1>
+    <form action="/add" method="POST">
+        <label for="id">ID:</label><br>
+        <input type="text" name="id" required><br>
+        <label for="name">Name:</label><br>
+        <input type="text" name="name" required><br>
+        <input type="submit" value="Add User">
     </form>
 
-    <h2>Find User</h2>
-    <form action="/user" method="get">
-        <label>Enter ID:</label>
-        <input type="number" name="id" required><br><br>
-        <button type="submit">Search</button>
+    <h1>Get a User</h1>
+    <form action="/user" method="GET">
+        <label for="id">ID:</label><br>
+        <input type="text" name="id" required><br>
+        <input type="submit" value="Get User">
     </form>
+
 </body>
 </html>
